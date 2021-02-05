@@ -16,8 +16,124 @@ In total, 46 explanatory variables in 4 categories proposed, with explanation an
 <img src="https://github.com/cassiezy/Customer-Loyalty-Consulting-Project-Grocery-Retail/blob/master/pic/variables3 .png" width = '800'>
 
 ### 3. Data preparation
+- Raw Data provided by the client
+  + 209 transactions detail files with more then 85 millions trnsaction records
+  + Customer date
+  + Digital coupon data
+  + Promotion data
+  + Store data
+  + Product data
+
+#### Randomize 30,000 customers for further analysis
+```Python
+customers = customers[customers['SIGNUP_DATE']>=datetime(2018, 7, 1, 0, 0) ]
+
+import random
+sample_sso = pd.DataFrame(random.sample(list(customers.loc[customers['IS_TEAMMATE']=='N', 'SSO_USER_ID']), 30000))
+sample_sso.columns = ['sso_user_id']
+sample_sso.head()
+sample_sso.to_csv(save_path+'random_sso_id.csv', index = False)
+```
+
+#### Map transactions with the 30,000 random customers
+```Python
+name = []
+for i in range(209):
+    if i == 0:
+        name.append('TRANSACTIONS000000000000.csv')
+    elif i >= 1 and i <10:
+        name.append('TRANSACTIONS'+'00000000000'+str(i)+'.csv')
+    elif i >= 10 and i < 100:
+        name.append('TRANSACTIONS'+'0000000000'+str(i)+'.csv')
+    else:
+        name.append('TRANSACTIONS'+'000000000'+str(i)+'.csv')
+```
+
+```Python
+from dask.distributed import Client
+
+client = Client(n_workers = 8)
+
+import os
+import dask
+import dask.dataframe as dd
+```
+
+```Python
+from progressbar import ProgressBar
+pbar = ProgressBar()
+
+for i in pbar(range(209)):
+    filename = os.path.join('../data-repository', name[i])
+    if i == 0:
+        df = dd.read_csv(filename, compression ='gzip', 
+                         dtype = {'sku': 'float64', 'num_of_units': 'float64'},
+                         blocksize = None)
+    else:
+        df = dd.concat([df, dd.read_csv(filename, compression ='gzip', 
+                                        dtype = {'sku': 'float64', 'num_of_units': 'float64'},
+                                        blocksize = None)], axis = 0)
+print('all files merged')
+```
+
+```Python
+sample_sso = pd.read_csv(save_path+'random_sso_id.csv')
+sample_sso.head()
+T = df.loc[df['sso_user_id'].isin(sample_sso['sso_user_id'])].reset_index(drop = True)
+```
+
 - Use Panel Data Before COVID to Better Study Customer Loyalty
 <img src="https://github.com/cassiezy/Customer-Loyalty-Consulting-Project-Grocery-Retail/blob/master/pic/4.png" width = '800'>
+
+```Python
+def generate_x(dt_list, T_list, T, cus, map_id, promotions, stores, df_new, dpmt, coupons, OB_MAP):
+    OB_MAP = OB_MAP.fillna(0)
+    OB_MAP['sku'] = OB_MAP['sku'].astype(int)
+    OB_MAP['sku'] = OB_MAP['sku'].astype(str)
+    
+    for i in range(len(T_list)):
+        
+        T_list[i]['sku'] = T_list[i]['sku'].astype(int)
+        T_list[i]['sku'] = T_list[i]['sku'].astype(str)
+        T_list[i]['store_id'] = T_list[i]['store_id'].astype(str)
+        data_frame = get_x_customer(cus, map_id, T_list[i], dt_list[i + 1])
+        data_frame = data_frame.rename(columns = {'SSO_USER_ID': 'sso_user_id'})
+        data_df2 = get_x_behavior(T_list[i], dpmt, OB_MAP)
+        data_df3 = Promotion_per_transaction(T_list[i], promotions)
+        data_df4 = get_x_store(T_list[i], stores, df_new)
+        data_df5 = get_coupon_usage(T, coupons, map_id, dt_list[i], dt_list[i+1])
+        data_X_T1 = data_df3.merge(data_df4, how = 'left', left_index = True, right_on = 'sso_user_id')
+        data_X_T1 = data_X_T1.merge(data_df2, how = 'left', on = 'sso_user_id')
+        data_X_T1 = data_X_T1.merge(data_df5, how = 'left', on = 'sso_user_id')
+        data_X_T1 = data_X_T1.merge(data_frame, how = 'left', on = 'sso_user_id')
+        
+        #os.remove('./team_data/T'+str(i+1)+'_X.csv')
+        data_X_T1.to_csv('./team_data/T'+str(i+1)+'_X.csv', index = False)
+        
+    return 'Done'
+```
+
+```Python
+generate_x(dt_list, T_list, T, cus, map_id, promotions, stores, df_new, dpmt, coupons, OB_MAP)
+```
+
+```Python
+def generate_y_var(dt_list, T_list):
+    
+    #list_data = [[T1, dt1, dt2, 'T1'], [T2, dt2, dt3, 'T2'], [T3, dt3, dt4, 'T3'], \
+    #             [T4, dt4, dt5, 'T4'], [T5, dt5, dt6, 'T5'], [T6, dt6, dt7, 'T6']]
+    
+    for i in range(len(T_list)):
+        data_df1 = generate_y(T_list[i], dt_list[i], dt_list[i+1])
+        #os.remove('./team_data/Covid'+str(i+1)+'_Y.csv')
+        data_df1.to_csv('./team_data/T'+str(i+1)+'_Y.csv', index = False)
+
+    return 'Done'
+```
+
+```Python
+generate_y_var(dt_list, T_list)
+```
 
 - Additional Filtering Assumptions on Data Cleaning
   + Outliers
@@ -45,6 +161,40 @@ In total, 46 explanatory variables in 4 categories proposed, with explanation an
   + How loyalty is affecCted by the features may be different across people of different shopping habits
   + Customers are labeled into 4 groups according to their average basket size and average trips per week to avoid estimation bias introduced by their intrinsic differences
 <img src="https://github.com/cassiezy/Customer-Loyalty-Consulting-Project-Grocery-Retail/blob/master/pic/6.png" width = '900'>
+
+**Generate y**
+- <mark> average spending per trip
+```Python
+def generate_y(T):
+    
+    T['transaction_date'] = T['transaction_date'].apply(lambda x: datetime.strptime(x, "%Y-%m-%d"))
+    
+    T['transaction_date'] = T['transaction_date'].dt.date
+    
+    dt = T.groupby(['sso_user_id']).agg({'transaction_date':['min', 'max']}).reset_index()
+    dt['num_of_weeks'] = ((dt['transaction_date']['max'] - dt['transaction_date']['min'])/np.timedelta64(1, 'D'))//7
+    
+    dt = dt.droplevel(level = 1, axis = 1)
+    dt.columns = ['sso_user_id', 'first_transaction_date', 'last_transaction_date', 'num_of_weeks']
+    
+    y = T.groupby(['sso_user_id', 'transaction_date', 'store_id', 'transaction_number']).\
+    total_dollar_spending.max().reset_index().\
+    groupby(['sso_user_id']).agg({'total_dollar_spending':'mean', 'transaction_number':'size'}).reset_index()
+    
+    temp = y[~y['sso_user_id'].isin(dt.loc[dt['num_of_weeks']==0, 'sso_user_id'])]
+    
+    temp = pd.merge(temp, dt, how = 'inner', left_on = 'sso_user_id', right_on = 'sso_user_id')
+    
+    temp['transaction_number'] = temp['transaction_number']/temp[('num_of_weeks')]
+    
+    temp.columns = ['sso_user_id','basket_size','avg_trips_per_week','first_transaction',\
+                    'last_transaction','num_of_weeks']
+
+    return(temp[['sso_user_id','basket_size','avg_trips_per_week']])
+```
+```Python
+generate_y(T_22806)
+```
 
 ### 4. Model selection
 #### Linear Regression was adopted to better facilitate interpretation. 4 more machine learning models to see in appendix, including gradient boosting, random forest, SVM and Neural Network.
