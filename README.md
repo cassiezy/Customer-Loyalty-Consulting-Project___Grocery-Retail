@@ -47,7 +47,7 @@ In total, 46 explanatory variables in 4 categories proposed, with explanation an
 <img src="https://github.com/cassiezy/Customer-Loyalty-Consulting-Project-Grocery-Retail/blob/master/pic/6.png" width = '900'>
 
 ### 4. Model selection
-#### Linear Regression was Adopted to Better Facilitate Interpretation
+#### Linear Regression was adopted to better facilitate interpretation. 4 more machine learning models to see in appendix, including gradient boosting, random forest, SVM and Neural Network.
 #### Confounders
 + Season indicator
 + Most frequent store
@@ -150,3 +150,218 @@ In total, 46 explanatory variables in 4 categories proposed, with explanation an
 
 * *Features are based on all past data (including COVID period)*
 
+### Appendix 4 - Gradient Boosting
+```Python
+from sklearn.ensemble import GradientBoostingRegressor
+from numpy import mean
+from numpy import std
+from sklearn.datasets import make_regression
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import RepeatedKFold
+from sklearn.model_selection import GridSearchCV
+from matplotlib import pyplot
+import pandas as pd
+from sklearn.metrics import mean_squared_error 
+from sklearn.metrics import mean_absolute_error
+```
+
+#### Read data
+```Python
+df = pd.read_csv('team_data/new_train.csv')
+df.head()
+df.columns
+
+# Get values of X and Y
+x_columns = df.columns.drop('rfm_score').drop('sso_user_id').drop('postcode')
+x = df[x_columns]
+y = df['rfm_score']
+```
+
+#### define the grid of values to search
+```Python
+grid = dict()
+grid['n_estimators'] = [100,200,300]
+grid['learning_rate'] = [0.1, 0.2]
+grid['subsample'] = [0.5, 1.0]
+grid['max_depth'] = [1, 2]
+```
+https://machinelearningmastery.com/gradient-boosting-machine-ensemble-in-python/
+```Python
+# evaluate the model
+cv = RepeatedKFold(n_splits=10, n_repeats=3, random_state=1)
+model = GradientBoostingRegressor()
+
+grid_search = GridSearchCV(estimator=model, param_grid=grid, n_jobs=-1, cv=cv, scoring= 'r2')
+
+# execute the grid search
+grid_result = grid_search.fit(x, y)
+# summarize the best score and configuration
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+```
+
+#### fit the model on the whole dataset
+```Python
+model = GradientBoostingRegressor(n_estimators=300, 
+                                  learning_rate=0.2,max_depth=2, subsample = 1.0, random_state=0, loss='ls')
+model.fit(x, y)
+```
+```Python
+df_test = pd.read_csv('team_data/new_test.csv')
+x_test = df_test[x_columns]
+y_test = df_test['rfm_score']
+
+pred_y = model.predict(x_test).flatten()
+
+
+from sklearn import metrics
+print('test R2:', metrics.r2_score(y_test,pred_y))
+```
+#### test R2: 0.9137088736373132
+
+```Python
+from sklearn.inspection import permutation_importance
+import matplotlib.pyplot as plt
+import numpy as np
+
+feature_importance = model.feature_importances_
+sorted_idx = np.argsort(feature_importance)
+pos = np.arange(sorted_idx.shape[0]) + .5
+fig = plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.barh(pos, feature_importance[sorted_idx], align='center')
+plt.yticks(pos, np.array(df.columns)[sorted_idx])
+plt.title('Feature Importance (MDI)')
+
+result = permutation_importance(model, x_test, y_test, n_repeats=10,
+                                random_state=42, n_jobs=2)
+sorted_idx = result.importances_mean.argsort()
+plt.subplot(1, 2, 2)
+plt.boxplot(result.importances[sorted_idx].T,
+            vert=False, labels=np.array(df.columns)[sorted_idx])
+plt.title("Permutation Importance (test set)")
+fig.tight_layout()
+plt.show()
+```
+#### mobile usage and promotion sensitivity are the most important features in the best-performing ML model
+
+
+### Appendix 5 - Random Forest
+```Python
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import GridSearchCV
+from sklearn import metrics
+```
+
+#### train_test split
+```Python
+#split x and y in train data
+y=train.loc[:,'rfm_score']
+x=train.iloc[:,2:]
+
+#Split validation set (inside test)
+from sklearn.model_selection import train_test_split
+x_tr, x_va, y_tr, y_va = train_test_split(x, y, test_size=0.2, random_state=0)
+
+#split x and y in test data (final test)
+y_te=test.loc[:,'rfm_score']
+x_te=test.iloc[:,2:]
+x_te.head()
+```
+
+#### build base model with whole train data
+```Python
+base_rf1 = RandomForestRegressor(n_estimators=40,oob_score = True,random_state=0)
+base_rf1.fit(x, y)
+y_pred = base_rf1.predict(x)
+print('train MSE:', metrics.mean_squared_error(y,y_pred))
+print('Out of Bag:',base_rf1.oob_score_)
+```
+train MSE: 0.00011083334191487102
+Out of Bag: 0.8936985746460763
+
+#### use grid search to find optimal parameters
+```Python
+ntree = range(101,211,10)
+min_samples_split = [2, 5]
+max_depth=range(10,110,40)
+min_samples_leaf = [1, 2, 4]
+param ={'n_estimators':ntree,
+        'max_depth': max_depth,
+            'min_samples_split': min_samples_split,
+            'min_samples_leaf': min_samples_leaf}
+
+gs_rf = GridSearchCV(estimator=RandomForestRegressor(oob_score = True,random_state=0), 
+                     param_grid=param, n_jobs=-1, cv=5, scoring='r2')
+gs_rf.fit(x,y)
+
+print('best_params:', gs_rf.best_params_, gs_rf.best_score_)
+```
+best_params: {'max_depth': 50, 'min_samples_leaf': 2, 'min_samples_split': 5, 'n_estimators': 201} 0.9005132352402694
+
+```Python
+opt_rf =RandomForestRegressor(n_estimators=201,max_depth=50,min_samples_leaf=2,min_samples_split=5,oob_score = True,random_state=0)
+opt_rf=opt_rf.fit(x,y)
+y_te_pred=gs_rf.predict(x_te)
+print('test R2:', metrics.r2_score(y_te,y_te_pred))
+print('Out of Bag:',opt_rf.oob_score_)
+```
+test R2: 0.9013272660802846
+Out of Bag: 0.901400117074135
+
+#### initial RF with validation. we can see there is a overfitting problem.
+```Python
+base_rf = RandomForestRegressor(n_estimators=40,oob_score = True,random_state=0)
+base_rf.fit(x_tr, y_tr)
+y_pred1 = base_rf.predict(x_va)
+y_tr_pred=base_rf.predict(x_tr)
+print('test MSE:', metrics.mean_squared_error(y_va,y_pred1))
+print('train MSE:', metrics.mean_squared_error(y_tr,y_tr_pred))
+print('Out of Bag:',base_rf.oob_score_)
+```
+test MSE: 0.0022654992256412516
+train MSE: 0.00034827731433476874
+Out of Bag: 0.8362582632788543
+
+#### use validation and adjust parameters using grid_search
+```Python
+ntree = range(1,211,10)
+max_depth=range(10,110,40)
+min_samples_split = [2, 5, 10]
+min_samples_leaf = [1, 2, 4]
+param ={'n_estimators':ntree,
+        'max_depth': max_depth,
+            'min_samples_split': min_samples_split,
+            'min_samples_leaf': min_samples_leaf}
+
+gs_rfv = GridSearchCV(estimator=RandomForestRegressor(oob_score = True,random_state=0), 
+                     param_grid=param, n_jobs=-1, cv=3, scoring='neg_mean_squared_error')
+gs_rfv.fit(x_tr,y_tr)
+
+print('best_params:', gs_rf.best_params_, gs_rf.best_score_)
+```
+best_params: {'max_depth': 50, 'min_samples_leaf': 4, 'min_samples_split': 2, 'n_estimators': 201} -0.0022836226754578428
+
+#### check validation MSE
+```Python
+opt_rf1=RandomForestRegressor(n_estimators=201,min_samples_leaf=4,min_samples_split=10,max_depth=50,oob_score = True,random_state=0)
+opt_rf1.fit(x_tr, y_tr)
+y_pred_opt= opt_rf1.predict(x_va)
+y_tr_pred_opt=opt_rf1.predict(x_tr)
+
+print('test MSE:', metrics.mean_squared_error(y_va,y_pred_opt))
+print('train MSE:', metrics.mean_squared_error(y_tr,y_tr_pred_opt))
+print('Out of Bag:',opt_rf.oob_score_)
+
+```
+test MSE: 0.002229613583784239
+train MSE: 0.0007971369340714459
+Out of Bag: 0.8491829684925485
+
+
+
+
+
+```Python
+
+```
