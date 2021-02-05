@@ -360,8 +360,149 @@ Out of Bag: 0.8491829684925485
 
 
 
-
+### Appendix 6 - SVM
 
 ```Python
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVR
+```
+
+```Python
+X = train.drop(['sso_user_id','rfm_score', 'most_freq_store'], axis = 1)
+y = train['rfm_score']
+
+test = pd.read_csv('./team_data/new_test.csv')
+
+X_val = test.drop(['sso_user_id','rfm_score', 'most_freq_store'], axis = 1)
+y_val = test['rfm_score']
+
+X = X.values
+y = y.values
+X_val = X_val.values
 
 ```
+#### feature scaling
+```Python
+y= y.reshape(-1, 1)
+from sklearn.preprocessing import StandardScaler
+sc_X = StandardScaler()
+sc_y = StandardScaler()
+X = sc_X.fit_transform(X)
+X_val = sc_X.fit_transform(X_val)
+y = sc_y.fit_transform(y)
+```
+#### Fitting SVR to the dataset
+```Python
+X.shape, y.shape, X_val.shape
+```
+((20000, 40), (20000, 1), (2783, 40))
+```Python
+y= y.reshape(20000, )
+```
+#### Gridsearch
+```Python
+from sklearn.svm import SVR
+from sklearn.model_selection import GridSearchCV
+```
+
+```Python
+param_grid = {'C': [0.1,1, 10, 100, 1000], 'gamma': [0.01, 1e-3, 1e-4],'kernel': ['rbf']}
+
+grid = GridSearchCV(SVR(),param_grid,refit=True,verbose=2)
+grid.fit(X, y)
+```
+
+```Python
+print(grid.best_estimator_)
+```
+SVR(C=100, gamma=0.001)
+
+```Python
+best_parameters = {'gamma':0.001,"C":100}
+
+regressor = SVR(kernel = 'rbf',C=best_parameters["C"], gamma=best_parameters["gamma"])
+regressor.fit(X, y)
+y_pred = regressor.predict(X_val)
+y_pred = sc_y.inverse_transform(y_pred) 
+
+metrics.r2_score(Y_val, y_pred)
+```
+0.8719051159255504
+
+
+### Appendix 7 - Neural Network
+```Python
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.wrappers.scikit_learn import KerasRegressor
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
+```
+
+```Python
+from sklearn.model_selection import train_test_split
+Y = df.loc[:, 'rfm_score']
+X = df.drop(['rfm_score','sso_user_id','most_freq_store'], axis = 1)
+X_train, X_val, Y_train, Y_val = train_test_split(X, Y, test_size=0.2)
+```
+
+```Python
+model = Sequential([Dense(32, activation='relu', input_shape=(40,)),Dense(32, activation='relu'),Dense(1, activation='sigmoid'),])
+model.compile(optimizer='adam',loss='mse',metrics=['mae', 'mse'])
+result = model.fit(X, Y, batch_size = 128, epochs = 100, validation_split = 0.2)
+```
+
+```Python
+import matplotlib.pyplot as plt
+print(result.history.keys())
+# "Loss"
+plt.plot(result.history['loss'])
+plt.plot(result.history['val_loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'validation'], loc='upper left')
+plt.grid(True)
+plt.show()
+```
+
+```Python
+df_test = pd.read_csv('team_data/new_test.csv')
+Y_test = df_test.loc[:, 'rfm_score']
+X_test = df_test.drop(['rfm_score','sso_user_id','most_freq_store'], axis = 1)
+pred_y = model.predict(X_test).flatten()
+```
+
+```Python
+def mae_metric(actual, predicted):
+    sum_error = 0.0
+    for i in range(len(actual)):
+        sum_error += abs(predicted[i] - actual[i])
+    return sum_error / float(len(actual))
+```
+
+```Python
+def mse_metric(actual, predicted):
+    sum_error = 0.0
+    for i in range(len(actual)):
+        prediction_error = predicted[i] - actual[i]
+        sum_error += (prediction_error ** 2)
+    mean_error = sum_error / float(len(actual))
+    return mean_error
+```
+
+```Python
+mae_metric(Y_test, pred_y)
+```
+0.02142082871220066
+
+```Python
+mse_metric(Y_test, pred_y)
+```
+0.000989031827716198
+```Python
+import sklearn.metrics
+sklearn.metrics.r2_score(Y_test, pred_y, sample_weight=None, multioutput='uniform_average')
+```
+0.8657518000609311
